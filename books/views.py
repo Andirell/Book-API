@@ -6,6 +6,7 @@ from .models import Book
 from users.models import Author
 from django.shortcuts import get_object_or_404
 from .permissions import is_Author
+from rest_framework.permissions import IsAuthenticated
 
 # -----------------------------------------------------------------------------
 # Swagger / OpenAPI (drf-spectacular)
@@ -131,7 +132,7 @@ _path_id = OpenApiParameter(
 
 # Create your views here.
 class Books(APIView):
-    permission_classes= [is_Author]
+    permission_classes= [IsAuthenticated, is_Author]
     def get(self, request):
         books = Book.objects.all()
 
@@ -190,4 +191,4 @@ class Books(APIView):
             return Response({"message": "The book you are looking for does not exist"}, status=status.HTTP_404_NOT_FOUND)
         
         book.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        return Response({"message": "book deleted successfully"}, status=status.HTTP_200_OK)

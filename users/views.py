@@ -119,7 +119,7 @@ def signin(request):
         refresh = RefreshToken.for_user(user)
         return Response({"message": "sign in successful", "access_token": str(access), "refresh": str(refresh)}, status=status.HTTP_200_OK)
     else:
-        return Response({"error": "invalid creditials"}, status=status.HTTP_401_UNAUTHORIZED)
+        return Response({"error": "invalid credentials"}, status=status.HTTP_401_UNAUTHORIZED)
 
 # Document POST /users/author/ — needs JWT: students click "Authorize" in Swagger first
 @extend_schema(
@@ -133,7 +133,6 @@ def signin(request):
         401: AuthorError,
     },
 )
-
 @api_view(["POST"])
 def add_author(request):
     print(request.user, ":the owner of token")

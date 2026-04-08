@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>To-Do App</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      max-width: 560px;
+      margin: 0 auto;
+      padding: 1.5rem;
+      background: #f5f5f5;
+      min-height: 100vh;
+    }
+    h1 { font-size: 1.5rem; color: #333; margin-bottom: 1rem; }
+    .form-row { margin-bottom: 0.75rem; }
+    .form-row label { display: block; font-size: 0.85rem; color: #555; margin-bottom: 0.25rem; }
+    input[type="text"], input[type="datetime-local"], textarea {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 1rem;
+    }
+    textarea { min-height: 60px; resize: vertical; }
+    input:focus, textarea:focus {
+      outline: none;
+      border-color: #2563eb;
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+    }
+    button {
+      padding: 0.6rem 1rem;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      font-weight: 500;
+      cursor: pointer;
+    }
+    .btn-add { background: #2563eb; color: white; margin-top: 0.5rem; }
+    .btn-add:hover { background: #1d4ed8; }
+    .btn-edit { background: #7c3aed; color: white; padding: 0.35rem 0.6rem; font-size: 0.8rem; }
+    .btn-edit:hover { background: #6d28d9; }
+    .btn-delete { background: #dc2626; color: white; padding: 0.35rem 0.6rem; font-size: 0.8rem; }
+    .btn-delete:hover { background: #b91c1c; }
+    ul { list-style: none; padding: 0; margin: 1rem 0 0; }
+    .todo-card {
+      background: white;
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    .todo-card .title { font-weight: 600; color: #111; margin-bottom: 0.25rem; }
+    .todo-card .description { color: #555; font-size: 0.9rem; margin-bottom: 0.5rem; white-space: pre-wrap; }
+    .todo-card .meta { font-size: 0.8rem; color: #888; }
+    .todo-card .meta span { margin-right: 1rem; }
+    .todo-card .actions { margin-top: 0.75rem; display: flex; gap: 0.5rem; }
+    .todo-card.editing .view-mode { display: none; }
+    .todo-card .edit-mode { display: none; }
+    .todo-card.editing .edit-mode { display: block; }
+    .todo-card .edit-mode .form-row { margin-bottom: 0.5rem; }
+    .todo-card .edit-mode input, .todo-card .edit-mode textarea { font-size: 0.9rem; }
+    .message { padding: 0.5rem 0.75rem; border-radius: 6px; margin-bottom: 1rem; font-size: 0.9rem; }
+    .message.error { background: #fef2f2; color: #b91c1c; }
+    .message.success { background: #f0fdf4; color: #047857; }
+    .message.hidden { display: none; }
+    .loading { color: #6b7280; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <h1>To-Do App</h1>
+  <p class="message hidden" id="message"></p>
+
+  <div class="form-row">
+    <label for="title">Title</label>
+    <input type="text" id="title" placeholder="Todo title" />
+  </div>
+  <div class="form-row">
+    <label for="description">Description</label>
+    <textarea id="description" placeholder="Description (optional)"></textarea>
+  </div>
+  <div class="form-row">
+    <label for="author">Author</label>
+    <input type="text" id="author" placeholder="Your name" />
+  </div>
+  <div class="form-row">
+    <label for="time">Time</label>
+    <input type="datetime-local" id="time" />
+  </div>
+  <button type="button" class="btn-add" id="btnAdd">Add To-Do</button>
+
+  <ul id="todoList"></ul>
+  <p class="loading" id="loading">Loading...</p>
+
+  <script>
+  const API_BASE = 'http://127.0.0.1:8000/todo_app/todos';
+const endpoints = {
+  get: API_BASE + '/',
+  create: API_BASE + '/',
+  update: (id) => API_BASE + '/' + id + '/',
+  delete: (id) => API_BASE + '/' + id + '/'
+};
+
+    const listEl = document.getElementById('todoList');
+    const loadingEl = document.getElementById('loading');
+    const messageEl = document.getElementById('message');
+    const titleEl = document.getElementById('title');
+    const descEl = document.getElementById('description');
+    const authorEl = document.getElementById('author');
+    const timeEl = document.getElementById('time');
+    const btnAdd = document.getElementById('btnAdd');
+
+    function showMessage(text, type) {
+      messageEl.textContent = text;
+      messageEl.className = 'message ' + (type || 'success');
+      messageEl.classList.remove('hidden');
+      setTimeout(() => messageEl.classList.add('hidden'), 3000);
+    }
+    function showError(err) { showMessage(err || 'Request failed', 'error'); }
+
+    function formatTime(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      return d.toLocaleString();
+    }
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      const div = document.createElement('div');
+      div.textContent = s;
+      return div.innerHTML;
+    }
+
+    function renderTodo(todo) {
+      const li = document.createElement('li');
+      li.className = 'todo-card';
+      li.dataset.id = todo.id;
+      const timeStr = typeof todo.time === 'string' ? todo.time : (todo.time || '');
+      li.innerHTML =
+        '<div class="view-mode">' +
+          '<div class="title">' + escapeHtml(todo.title) + '</div>' +
+          (todo.description ? '<div class="description">' + escapeHtml(todo.description) + '</div>' : '') +
+          '<div class="meta">' +
+            '<span>By ' + escapeHtml(todo.author) + '</span>' +
+            '<span>Time: ' + escapeHtml(formatTime(timeStr)) + '</span>' +
+          '</div>' +
+          '<div class="actions">' +
+            '<button type="button" class="btn-edit">Edit</button>' +
+            '<button type="button" class="btn-delete">Delete</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="edit-mode">' +
+          '<div class="form-row"><label>Title</label><input type="text" class="edit-title" value="' + escapeHtml(todo.title) + '" /></div>' +
+          '<div class="form-row"><label>Description</label><textarea class="edit-description">' + escapeHtml(todo.description || '') + '</textarea></div>' +
+          '<div class="form-row"><label>Author</label><input type="text" class="edit-author" value="' + escapeHtml(todo.author) + '" /></div>' +
+          '<div class="form-row"><label>Time</label><input type="datetime-local" class="edit-time" /></div>' +
+          '<button type="button" class="btn-save-edit">Save</button>' +
+        '</div>';
+      const card = li;
+      const editTitle = card.querySelector('.edit-title');
+      const editDesc = card.querySelector('.edit-description');
+      const editAuthor = card.querySelector('.edit-author');
+      const editTime = card.querySelector('.edit-time');
+      if (timeStr) {
+        try {
+          const d = new Date(timeStr);
+          if (!isNaN(d.getTime())) editTime.value = d.toISOString().slice(0, 16);
+        } catch (_) {}
+      }
+      card.querySelector('.btn-edit').addEventListener('click', () => card.classList.add('editing'));
+      card.querySelector('.btn-delete').addEventListener('click', () => deleteTodo(todo.id, card));
+      card.querySelector('.btn-save-edit').addEventListener('click', () => {
+        const title = editTitle.value.trim();
+        const description = editDesc.value.trim();
+        const author = editAuthor.value.trim();
+        const timeVal = editTime.value;
+        if (!title || !author || !timeVal) {
+          showError('Title, author and time are required.');
+          return;
+        }
+        card.classList.remove('editing');
+        updateTodo(todo.id, { title, description, author, time: timeVal }, card);
+      });
+      listEl.appendChild(li);
+    }
+
+    async function loadTodos() {
+      loadingEl.textContent = 'Loading...';
+      try {
+        const res = await fetch(endpoints.get);
+        const data = await res.json();
+        loadingEl.textContent = '';
+        listEl.innerHTML = '';
+        if (data.data && data.data.length) {
+          data.data.forEach(renderTodo);
+        } else {
+          loadingEl.textContent = 'No to-dos yet. Add one above.';
+        }
+      } catch (e) {
+        loadingEl.textContent = '';
+        showError('Could not load. Is Django running?');
+      }
+    }
+
+    async function addTodo() {
+      const title = titleEl.value.trim();
+      const description = descEl.value.trim();
+      const author = authorEl.value.trim();
+      const timeVal = timeEl.value;
+      if (!title || !author || !timeVal) {
+        showError('Title, author and time are required.');
+        return;
+      }
+      const body = { title, description, author, time: timeVal };
+      try {
+        const res = await fetch(endpoints.create, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        if (res.ok) {
+          titleEl.value = '';
+          descEl.value = '';
+          authorEl.value = '';
+          timeEl.value = '';
+          showMessage('Added.');
+          loadTodos();
+        } else {
+          showError(data.message || 'Create failed');
+        }
+      } catch (e) {
+        showError('Network error');
+      }
+    }
+
+    async function updateTodo(id, payload, card) {
+      try {
+        const res = await fetch(endpoints.update(id), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (res.ok) {
+          card.querySelector('.title').textContent = payload.title;
+          const descEl = card.querySelector('.description');
+          if (payload.description) {
+            descEl.textContent = payload.description;
+            descEl.style.display = '';
+          } else {
+            descEl.textContent = '';
+            descEl.style.display = 'none';
+          }
+          card.querySelector('.meta span').textContent = 'By ' + payload.author;
+          card.querySelectorAll('.meta span')[1].textContent = 'Time: ' + formatTime(payload.time);
+          showMessage('Updated.');
+        } else {
+          showError(data.message || 'Update failed');
+        }
+      } catch (e) {
+        showError('Network error');
+      }
+    }
+
+    async function deleteTodo(id, card) {
+      try {
+        const res = await fetch(endpoints.delete(id), { method: 'DELETE' });
+        if (res.status === 204 || res.ok) {
+          card.remove();
+          showMessage('Deleted.');
+        } else {
+          const data = await res.json().catch(() => ({}));
+          showError(data.message || 'Delete failed');
+        }
+      } catch (e) {
+        showError('Network error');
+      }
+    }
+
+    btnAdd.addEventListener('click', addTodo);
+    loadTodos();
+  </script>
+</body>
+</html>
